@@ -58,11 +58,11 @@ a.btn{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--l
 <input id="multi" type="file" accept="image/*" multiple hidden>
 <div class="ov" id="ov" role="dialog" aria-label="Exported image">
   <img id="out" alt="Exported photo grid">
-  <p id="msg">Press and hold the image to save it to Photos.</p>
+  <p id="msg">Tap Save to Photos, then choose Save Image. Or press and hold the image.</p>
   <div class="btns" style="justify-content:center">
-    <button id="save" class="primary" style="display:none;width:auto">Save image</button>
-    <a id="dl" class="btn" download="photo-grid.png" style="display:none">Download</a>
-    <button id="share" style="display:none">Share</button>
+    <button id="share" class="primary" style="display:none;width:auto">Save to Photos</button>
+    <button id="save" style="display:none">Save file</button>
+    <a id="dl" class="btn" download="photo-grid.png" style="display:none">Download file</a>
     <button id="close">Close</button>
   </div>
 </div>
@@ -220,9 +220,9 @@ $('exp').addEventListener('click',function(){
   var S=2160,o=document.createElement('canvas');o.width=o.height=S;
   render(o.getContext('2d'),S,false);
   var url=o.toDataURL('image/png');
-  $('out').src=url;$('dl').href=url;
-  $('msg').textContent='Press and hold the image to save it to Photos.';
-  blob=null;o.toBlob(function(b){blob=b});
+  $('out').src=url;
+  $('msg').textContent='Tap Save to Photos, then choose Save Image. Or press and hold the image.';
+  blob=null;o.toBlob(function(b){blob=b;var d=$('dl');if(d._u)URL.revokeObjectURL(d._u);d._u=URL.createObjectURL(b);d.href=d._u});
   $('ov').classList.add('on');
 });
 $('close').addEventListener('click',function(){$('ov').classList.remove('on')});
@@ -233,7 +233,7 @@ try{
 }catch(err){}
 $('share').addEventListener('click',function(){
   if(!blob)return;
-  navigator.share({files:[new File([blob],'photo-grid.png',{type:'image/png'})]}).catch(function(){});
+  navigator.share({files:[new File([blob],'photo-grid.png',{type:'image/png'})]}).catch(function(e){if(e&&e.name!=='AbortError')$('msg').textContent='Sharing was blocked here. Press and hold the image instead.'});
 });
 var dls=null;
 if(window.claude&&claude.use){
