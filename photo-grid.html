@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Photo grid</title>
+<style>
+:root{--bg:#eef0f3;--surface:#fff;--ink:#1b2230;--mute:#5d6678;--line:#ccd2dc;--acc:#0f6b66;--acc-ink:#fff;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141922;--surface:#1f2633;--ink:#e8ecf3;--mute:#9aa4b6;--line:#343d4f;--acc:#3fb8ae;--acc-ink:#07201e;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141922;--surface:#1f2633;--ink:#e8ecf3;--mute:#9aa4b6;--line:#343d4f;--acc:#3fb8ae;--acc-ink:#07201e;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 4px;font-weight:650}
+.hint{margin:0 0 12px;color:var(--mute);font-size:14px}
+canvas{display:block;width:100%;aspect-ratio:1;border-radius:6px;border:1px solid var(--line);touch-action:none;background:#fff}
+.panel{margin-top:14px;display:grid;gap:12px}
+.row{display:flex;align-items:center;gap:10px}
+.row label{min-width:72px;color:var(--mute);font-size:14px}
+input[type=range]{flex:1;accent-color:var(--acc);min-width:0}
+input[type=color]{width:40px;height:34px;padding:0;border:1px solid var(--line);border-radius:8px;background:none}
+.sw{width:28px;height:28px;padding:0;border-radius:50%;border:1px solid var(--line)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600;width:100%;padding:13px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+a.btn{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-decoration:none}
+#status{min-height:20px;color:var(--mute);font-size:14px;margin:0}
+.ov{position:fixed;inset:0;background:rgba(10,12,16,.92);display:none;flex-direction:column;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));overflow:auto;color:#fff;text-align:center}
+.ov.on{display:flex}
+.ov img{max-width:100%;max-height:65vh;border-radius:6px;-webkit-touch-callout:default}
+.ov p{margin:0;max-width:360px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Photo grid</h1>
+  <p class="hint">Tap an empty square to add a photo. Drag a photo to move it, pinch to zoom.</p>
+  <canvas id="cv" aria-label="3 by 3 photo grid"></canvas>
+  <div class="panel">
+    <p id="status" role="status"></p>
+    <div class="row"><label for="gap">Spacing</label><input id="gap" type="range" min="0" max="60" value="20"></div>
+    <div class="row"><label for="bg">Border</label><input id="bg" type="color" value="#ffffff">
+      <span class="btns" id="sws"></span></div>
+    <div class="row"><label for="zoom">Zoom</label><input id="zoom" type="range" min="1" max="5" step="0.01" value="1" disabled></div>
+    <div class="btns">
+      <button id="many">Add several photos</button>
+      <button id="rep" disabled>Replace</button>
+      <button id="rem" disabled>Remove</button>
+      <button id="rst" disabled>Reset position</button>
+    </div>
+    <button id="exp" class="primary">Export image</button>
+  </div>
+</main>
+<input id="one" type="file" accept="image/*" hidden>
+<input id="multi" type="file" accept="image/*" multiple hidden>
+<div class="ov" id="ov" role="dialog" aria-label="Exported image">
+  <img id="out" alt="Exported photo grid">
+  <p id="msg">Press and hold the image to save it to Photos.</p>
+  <div class="btns" style="justify-content:center">
+    <button id="save" class="primary" style="display:none;width:auto">Save image</button>
+    <a id="dl" class="btn" download="photo-grid.png" style="display:none">Download</a>
+    <button id="share" style="display:none">Share</button>
+    <button id="close">Close</button>
+  </div>
+</div>
+<script>
+(function(){
+var P=1080, cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+cv.width=cv.height=P;
+var cells=[];for(var i=0;i<9;i++)cells.push({src:null,z:1,x:0,y:0});
+var gap=0.02, bg='#ffffff', sel=-1, pending=-1, blob=null;
+var $=function(id){return document.getElementById(id)};
+var ptrs=new Map(), gest=null;
+
+function layout(S){var g=gap*S;return{g:g,c:(S-4*g)/3}}
+function clampCell(m){
+  if(!m.src)return;
+  m.z=Math.min(5,Math.max(1,m.z));
+  var b=Math.max(1/m.src.width,1/m.src.height)*m.z;
+  var mx=(m.src.width*b-1)/2, my=(m.src.height*b-1)/2;
+  m.x=Math.min(mx,Math.max(-mx,m.x)); m.y=Math.min(my,Math.max(-my,m.y));
+}
+function render(c2,S,preview){
+  var L=layout(S),g=L.g,c=L.c;
+  c2.fillStyle=bg;c2.fillRect(0,0,S,S);
+  for(var k=0;k<9;k++){
+    var x=g+(k%3)*(c+g), y=g+Math.floor(k/3)*(c+g), m=cells[k];
+    if(m.src){
+      clampCell(m);
+      var b=Math.max(1/m.src.width,1/m.src.height)*m.z*c;
+      var dw=m.src.width*b, dh=m.src.height*b;
+      c2.save();c2.beginPath();c2.rect(x,y,c,c);c2.clip();
+      c2.drawImage(m.src,x+c/2-dw/2+m.x*c,y+c/2-dh/2+m.y*c,dw,dh);
+      c2.restore();
+    }else if(preview){
+      c2.fillStyle='rgba(128,128,128,.25)';c2.fillRect(x,y,c,c);
+      c2.strokeStyle='rgba(90,90,90,.7)';c2.lineWidth=6;c2.lineCap='round';
+      c2.beginPath();c2.moveTo(x+c/2-c*.1,y+c/2);c2.lineTo(x+c/2+c*.1,y+c/2);
+      c2.moveTo(x+c/2,y+c/2-c*.1);c2.lineTo(x+c/2,y+c/2+c*.1);c2.stroke();
+    }
+  }
+  if(preview&&sel>=0){
+    var sx=g+(sel%3)*(c+g), sy=g+Math.floor(sel/3)*(c+g);
+    c2.strokeStyle='#14b8a6';c2.lineWidth=8;c2.strokeRect(sx+4,sy+4,c-8,c-8);
+  }
+}
+function draw(){render(ctx,P,true)}
+function say(t){$('status').textContent=t||''}
+function sync(){
+  var m=sel>=0?cells[sel]:null, has=!!(m&&m.src);
+  $('zoom').disabled=!has; $('rep').disabled=!has; $('rem').disabled=!has; $('rst').disabled=!has;
+  $('zoom').value=has?m.z:1;
+  draw();
+}
+function cellAt(e){
+  var r=cv.getBoundingClientRect(), S=P, L=layout(S);
+  var px=(e.clientX-r.left)/r.width*S, py=(e.clientY-r.top)/r.height*S;
+  var cl=function(v){return Math.min(2,Math.max(0,Math.floor((v-L.g/2)/(L.c+L.g))))};
+  return cl(py)*3+cl(px);
+}
+function dist(){var a=Array.from(ptrs.values());return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1}
+
+cv.addEventListener('pointerdown',function(e){
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===1){
+    var k=cellAt(e);
+    gest={k:k,moved:false,t:Date.now(),sx:e.clientX,sy:e.clientY};
+    sel=k;sync();
+  }else if(ptrs.size===2&&gest){
+    gest.moved=true;gest.d0=dist();gest.z0=cells[gest.k].z;
+  }
+});
+cv.addEventListener('pointermove',function(e){
+  var prev=ptrs.get(e.pointerId);if(!prev||!gest)return;
+  var dx=e.clientX-prev.x, dy=e.clientY-prev.y;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  var m=cells[gest.k];if(!m.src)return;
+  var w=cv.getBoundingClientRect().width, c=layout(w).c;
+  if(ptrs.size===1){
+    if(Math.hypot(e.clientX-gest.sx,e.clientY-gest.sy)>6)gest.moved=true;
+    if(gest.moved){m.x+=dx/c;m.y+=dy/c}
+  }else if(ptrs.size>=2){
+    m.z=gest.z0*dist()/gest.d0;
+    m.x+=dx/2/c;m.y+=dy/2/c;
+  }
+  clampCell(m);$('zoom').value=m.z;draw();
+});
+function up(e){
+  ptrs.delete(e.pointerId);
+  if(ptrs.size===0&&gest){
+    if(!gest.moved&&Date.now()-gest.t<500&&!cells[gest.k].src&&e.type==='pointerup')openPicker(gest.k);
+    gest=null;
+  }
+}
+cv.addEventListener('pointerup',up);
+cv.addEventListener('pointercancel',up);
+cv.addEventListener('wheel',function(e){
+  if(sel<0||!cells[sel].src)return;
+  e.preventDefault();
+  var m=cells[sel];m.z*=Math.exp(-e.deltaY*0.002);clampCell(m);sync();
+},{passive:false});
+
+function load(file){
+  return new Promise(function(res,rej){
+    var fin=function(img,w,h){
+      var s=Math.min(1,1800/Math.max(w,h)), c=document.createElement('canvas');
+      c.width=Math.round(w*s);c.height=Math.round(h*s);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c);
+    };
+    var fallback=function(){
+      var fr=new FileReader();
+      fr.onerror=rej;
+      fr.onload=function(){var im=new Image();im.onerror=rej;im.onload=function(){fin(im,im.naturalWidth,im.naturalHeight)};im.src=fr.result};
+      fr.readAsDataURL(file);
+    };
+    if(window.createImageBitmap){
+      createImageBitmap(file,{imageOrientation:'from-image'}).then(function(b){fin(b,b.width,b.height)},fallback);
+    }else fallback();
+  });
+}
+function setCell(k,file){
+  return load(file).then(function(c){cells[k]={src:c,z:1,x:0,y:0};sel=k;sync()},function(){say('That file could not be read as an image.')});
+}
+function openPicker(k){pending=k;$('one').value='';$('one').click()}
+$('one').addEventListener('change',function(){
+  var f=this.files[0];if(f&&pending>=0){say('');setCell(pending,f)}
+});
+$('many').addEventListener('click',function(){
+  if(cells.every(function(c){return c.src})){say('All nine squares are filled. Remove a photo to add another.');return}
+  $('multi').value='';$('multi').click();
+});
+$('multi').addEventListener('change',function(){
+  var files=Array.from(this.files), empty=[];
+  cells.forEach(function(c,i){if(!c.src)empty.push(i)});
+  var n=Math.min(files.length,empty.length);
+  say(files.length>empty.length?'Only '+empty.length+' squares were empty, so '+(files.length-n)+' photo(s) were skipped.':'');
+  var p=Promise.resolve();
+  for(let i=0;i<n;i++)p=p.then(function(){return setCell(empty[i],files[i])});
+});
+$('rep').addEventListener('click',function(){if(sel>=0)openPicker(sel)});
+$('rem').addEventListener('click',function(){if(sel>=0){cells[sel]={src:null,z:1,x:0,y:0};sync()}});
+$('rst').addEventListener('click',function(){if(sel>=0&&cells[sel].src){cells[sel].z=1;cells[sel].x=0;cells[sel].y=0;sync()}});
+$('zoom').addEventListener('input',function(){
+  if(sel<0||!cells[sel].src)return;cells[sel].z=parseFloat(this.value);clampCell(cells[sel]);draw();
+});
+$('gap').addEventListener('input',function(){gap=this.value/1000;draw()});
+function setBg(v){bg=v;$('bg').value=v;draw()}
+$('bg').addEventListener('input',function(){setBg(this.value)});
+['#ffffff','#111111','#e8e1d4','#1f3a5f','#c8553d'].forEach(function(col){
+  var b=document.createElement('button');b.className='sw';b.style.background=col;b.setAttribute('aria-label','Border color '+col);
+  b.addEventListener('click',function(){setBg(col)});$('sws').appendChild(b);
+});
+
+$('exp').addEventListener('click',function(){
+  if(!cells.some(function(c){return c.src})){say('Add at least one photo before exporting.');return}
+  var S=2160,o=document.createElement('canvas');o.width=o.height=S;
+  render(o.getContext('2d'),S,false);
+  var url=o.toDataURL('image/png');
+  $('out').src=url;$('dl').href=url;
+  $('msg').textContent='Press and hold the image to save it to Photos.';
+  blob=null;o.toBlob(function(b){blob=b});
+  $('ov').classList.add('on');
+});
+$('close').addEventListener('click',function(){$('ov').classList.remove('on')});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')$('ov').classList.remove('on')});
+try{
+  var tf=new File([new Blob(['x'])],'a.png',{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[tf]}))$('share').style.display='';
+}catch(err){}
+$('share').addEventListener('click',function(){
+  if(!blob)return;
+  navigator.share({files:[new File([blob],'photo-grid.png',{type:'image/png'})]}).catch(function(){});
+});
+var dls=null;
+if(window.claude&&claude.use){
+  claude.use('downloads').then(function(d){dls=d;if(d)$('save').style.display=''},function(){});
+}else{$('dl').style.display=''}
+$('save').addEventListener('click',function(){
+  if(!blob||!dls)return;
+  dls.save({filename:'photo-grid.png',data:blob}).then(function(){$('msg').textContent='Saved.'},function(e){
+    if(e&&e.code!=='declined')$('msg').textContent='Saving is not available here. Press and hold the image instead.';
+  });
+});
+sync();
+})();
+</script>
+</body>
+</html>
