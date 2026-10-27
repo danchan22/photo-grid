@@ -26,6 +26,7 @@ button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--
 button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600;width:100%;padding:13px}
 button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tri button{flex:1;padding:10px 4px;white-space:nowrap}
 a.btn{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-decoration:none}
 #status{min-height:20px;color:var(--mute);font-size:14px;margin:0}
 .ov{position:fixed;inset:0;background:rgba(10,12,16,.92);display:none;flex-direction:column;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));overflow:auto;color:#fff;text-align:center}
@@ -40,13 +41,13 @@ a.btn{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--l
   <p class="hint">Tap an empty square to add a photo. Drag a photo to move it, pinch to zoom.</p>
   <canvas id="cv" aria-label="3 by 3 photo grid"></canvas>
   <div class="panel">
+    <button id="many">Add several photos</button>
     <p id="status" role="status"></p>
     <div class="row"><label for="gap">Spacing</label><input id="gap" type="range" min="0" max="60" value="20"></div>
     <div class="row"><label for="bg">Border</label><input id="bg" type="color" value="#ffffff">
       <span class="btns" id="sws"></span></div>
     <div class="row"><label for="zoom">Zoom</label><input id="zoom" type="range" min="1" max="5" step="0.01" value="1" disabled></div>
-    <div class="btns">
-      <button id="many">Add several photos</button>
+    <div class="btns tri">
       <button id="rep" disabled>Replace</button>
       <button id="rem" disabled>Remove</button>
       <button id="rst" disabled>Reset position</button>
@@ -58,7 +59,7 @@ a.btn{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--l
 <input id="multi" type="file" accept="image/*" multiple hidden>
 <div class="ov" id="ov" role="dialog" aria-label="Exported image">
   <img id="out" alt="Exported photo grid">
-  <p id="msg">Tap Save to Photos, then choose Save Image. Or press and hold the image.</p>
+  <p id="msg">Tap Save to Photos, then choose Save Image.</p>
   <div class="btns" style="justify-content:center">
     <button id="share" class="primary" style="display:none;width:auto">Save to Photos</button>
     <button id="save" style="display:none">Save file</button>
@@ -220,8 +221,8 @@ $('exp').addEventListener('click',function(){
   render(o.getContext('2d'),S,false);
   var url=o.toDataURL('image/png');
   $('out').src=url;
-  $('msg').textContent='Tap Save to Photos, then choose Save Image. Or press and hold the image.';
-  blob=null;o.toBlob(function(b){blob=b;var d=$('dl');if(d._u)URL.revokeObjectURL(d._u);d._u=URL.createObjectURL(b);d.href=d._u});
+  $('msg').textContent='Tap Save to Photos, then choose Save Image.';
+  blob=null;o.toBlob(function(b){blob=b});
   $('ov').classList.add('on');
 });
 $('close').addEventListener('click',function(){$('ov').classList.remove('on')});
@@ -237,7 +238,7 @@ $('share').addEventListener('click',function(){
 var dls=null;
 if(window.claude&&claude.use){
   claude.use('downloads').then(function(d){dls=d;if(d)$('save').style.display=''},function(){});
-}else{$('dl').style.display=''}
+}
 $('save').addEventListener('click',function(){
   if(!blob||!dls)return;
   dls.save({filename:'photo-grid.png',data:blob}).then(function(){$('msg').textContent='Saved.'},function(e){
